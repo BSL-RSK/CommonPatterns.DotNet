@@ -1,0 +1,12 @@
+{
+  "userId": "test-user-123",
+  "name": "Jane Doe",
+  "roles": ["Admin", "Editor"],
+  "email": "jane.doe@example.com",
+  "isActive": true,
+  "createdAt": "2024-01-01T10:00:00Z",
+  "metadata": {
+    "source": "unit-test",
+    "notes": "Used for mock user scenario in integration tests."
+  }
+}

@@ -1,0 +1,215 @@
+# 🧪 GenericRepositoryTests Example
+
+This file provides a complete working example aligned with `GenericRepositoryTests.cs` in the `TestTemplates` folder.
+
+It shows how to test a repository that communicates with a database or external data source via a factory-like dependency.
+
+---
+
+## ✅ Repository and Connection Factory Under Test
+
+```csharp
+public interface IDataConnectionFactory
+{
+    IEnumerable<string> QueryNames();
+}
+
+public class UserRepository
+{
+    private readonly IDataConnectionFactory _connectionFactory;
+    private readonly ILogger<UserRepository> _logger;
+
+    public UserRepository(IDataConnectionFactory connectionFactory, ILogger<UserRepository> logger)
+    {
+        _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
+        _logger = logger;
+    }
+
+    public IEnumerable<string> GetUsernames()
+    {
+        try
+        {
+            var result = _connectionFactory.QueryNames();
+            _logger.LogInformation("Usernames retrieved from source");
+            return result ?? new List<string>();
+        }
+        catch (Exception ex)
+        {
+            throw new RepositoryException("Failed to retrieve usernames", ex);
+        }
+    }
+
+    public bool UserExists(string name)
+    {
+        return GetUsernames().Contains(name);
+    }
+
+    public IEnumerable<string> FilterUsersByPrefix(string prefix)
+    {
+        if (string.IsNullOrWhiteSpace(prefix)) return new List<string>();
+
+        return GetUsernames().Where(x => x.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).ToList();
+    }
+}
+
+public class RepositoryException : Exception
+{
+    public RepositoryException(string message, Exception? inner = null) : base(message, inner) { }
+}
+```
+
+---
+
+## 🧪 Breakdown of Key Tests
+
+### ✅ Constructor_ShouldThrow_WhenConnectionFactoryIsNull
+```csharp
+[Fact]
+public void Constructor_ShouldThrow_WhenConnectionFactoryIsNull()
+{
+    Assert.Throws<ArgumentNullException>(() => new UserRepository(null!, Mock.Of<ILogger<UserRepository>>()));
+}
+```
+
+---
+
+### ✅ GetUsernames_ShouldReturnExpectedResults_WhenValid
+```csharp
+[Fact]
+public void GetUsernames_ShouldReturnExpectedResults_WhenValid()
+{
+    _mockConnectionFactory.Setup(x => x.QueryNames()).Returns(["alice", "bob"]);
+
+    var result = _sut.GetUsernames();
+
+    Assert.Equal(["alice", "bob"], result);
+}
+```
+
+---
+
+### ❌ GetUsernames_ShouldReturnEmpty_WhenSourceReturnsNull
+```csharp
+[Fact]
+public void GetUsernames_ShouldReturnEmpty_WhenSourceReturnsNull()
+{
+    _mockConnectionFactory.Setup(x => x.QueryNames()).Returns((IEnumerable<string>)null!);
+
+    var result = _sut.GetUsernames();
+
+    Assert.NotNull(result);
+    Assert.Empty(result);
+}
+```
+
+---
+
+### 💥 GetUsernames_ShouldHandleDataException
+```csharp
+[Fact]
+public void GetUsernames_ShouldHandleDataException()
+{
+    _mockConnectionFactory.Setup(x => x.QueryNames()).Throws(new InvalidOperationException());
+
+    var ex = Assert.Throws<RepositoryException>(() => _sut.GetUsernames());
+    Assert.Contains("failed to retrieve", ex.Message.ToLower());
+}
+```
+
+---
+
+### 🧾 GetUsernames_ShouldLogInfo_WhenRetrieved
+```csharp
+[Fact]
+public void GetUsernames_ShouldLogInfo_WhenRetrieved()
+{
+    _mockConnectionFactory.Setup(x => x.QueryNames()).Returns(["charlie"]);
+
+    _sut.GetUsernames();
+
+    _mockLogger.Verify(
+        x => x.Log(
+            LogLevel.Information,
+            It.IsAny<EventId>(),
+            It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Usernames retrieved")),
+            null,
+            It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+        Times.Once);
+}
+```
+
+---
+
+### 🔢 UserExists_ShouldReturnCorrectResult (Theory)
+```csharp
+[Theory]
+[InlineData("alice", true)]
+[InlineData("zoe", false)]
+public void UserExists_ShouldReturnCorrectResult(string input, bool expected)
+{
+    _mockConnectionFactory.Setup(x => x.QueryNames()).Returns(["alice", "bob"]);
+
+    var result = _sut.UserExists(input);
+
+    Assert.Equal(expected, result);
+}
+```
+
+---
+
+### 🧠 FilterUsersByPrefix_ShouldReturnExpectedSubset (MemberData)
+```csharp
+public static IEnumerable<object[]> ValidPrefixes => new List<object[]>
+{
+    new object[] { "a", new List<string> { "alice" } },
+    new object[] { "b", new List<string> { "bob" } },
+    new object[] { "x", new List<string>() }
+};
+
+[Theory]
+[MemberData(nameof(ValidPrefixes))]
+public void FilterUsersByPrefix_ShouldReturnExpectedSubset(string prefix, List<string> expected)
+{
+    _mockConnectionFactory.Setup(x => x.QueryNames()).Returns(["alice", "bob"]);
+
+    var result = _sut.FilterUsersByPrefix(prefix);
+
+    Assert.Equal(expected, result);
+}
+```
+
+---
+
+### 🧪 FilterUsersByPrefix_ShouldReturnEmpty_WhenInvalid (MemberData)
+```csharp
+public static IEnumerable<object[]> InvalidPrefixes => new List<object[]>
+{
+    new object[] { null! },
+    new object[] { "   " },
+    new object[] { "" }
+};
+
+[Theory]
+[MemberData(nameof(InvalidPrefixes))]
+public void FilterUsersByPrefix_ShouldReturnEmpty_WhenInvalid(string prefix)
+{
+    _mockConnectionFactory.Setup(x => x.QueryNames()).Returns(["alice", "bob"]);
+
+    var result = _sut.FilterUsersByPrefix(prefix);
+
+    Assert.Empty(result);
+}
+```
+
+---
+
+## ✅ Summary
+
+This template works for repository tests that:
+
+- Query or filter over data sources
+- Log actions or exceptions
+- Normalize return types (empty instead of null)
+- Are sensitive to filtering inputs
+
+➡️ Extend this to other cases where repositories use connection factories, external APIs, or cached sources.
